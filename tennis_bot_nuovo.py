@@ -195,6 +195,33 @@ def get_live(key):
 # QUOTE PRE-MATCH MOVIODDS
 # ==========================================
 
+def get_odds_matches(key):
+    for attempt in range(2):
+        try:
+            payload = request_json(ODDS_URL, key, {"sport": "tennis"})
+            matches = payload.get("matches") if isinstance(payload, dict) else None
+            if not isinstance(matches, list):
+                print("Diagnostica MoviOdds: formato inatteso")
+                return []
+            print("Diagnostica MoviOdds: autenticazione e risposta OK")
+            return matches
+        except requests.RequestException as exc:
+            response = exc.response
+            status = response.status_code if response is not None else None
+            reason = ("HTTP " + str(status) if isinstance(status, int)
+                      else type(exc).__name__)
+            print("Diagnostica MoviOdds:", reason)
+            if attempt == 0 and (isinstance(exc, (requests.ConnectionError, requests.Timeout))
+                                 or status in (502, 503, 504)):
+                continue
+            break
+        except ValueError:
+            print("Diagnostica MoviOdds: JSON non valido")
+            break
+    print("Diagnostica MoviOdds: quote in cache soltanto")
+    return []
+
+
 def winner_quotes(match):
     # Accetta esclusivamente mercati pre-match.
     if match.get("in_play") is not False:
@@ -419,22 +446,7 @@ def main():
     live = get_live(live_key)
     print("Partite live valide:", len(live))
 
-    odds_payload = request_json(
-        ODDS_URL,
-        odds_key,
-        {"sport": "tennis"}
-    )
-
-    odds_matches = (
-        odds_payload.get("matches")
-        if isinstance(odds_payload, dict)
-        else None
-    )
-
-    if not isinstance(odds_matches, list):
-        raise ValueError(
-            "Risposta MoviOdds senza matches"
-        )
+    odds_matches = get_odds_matches(odds_key)
 
     print("Partite MoviOdds:", len(odds_matches))
 
