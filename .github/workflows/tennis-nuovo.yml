@@ -1,6 +1,9 @@
 name: Tennis Live Alert
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/tennis-nuovo.yml'
   schedule:
     - cron: '4,19,34,49 * * * *'
 permissions:
@@ -59,11 +62,30 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
-          test -n "$TENNIS_API_KEY" && test -n "$MOVIODDS_API_KEY" && test -n "$TELEGRAM_BOT_TOKEN" && test -n "$TELEGRAM_CHAT_ID"
+          for name in TENNIS_API_KEY MOVIODDS_API_KEY TELEGRAM_BOT_TOKEN TELEGRAM_CHAT_ID; do
+            if [ -z "${!name}" ]; then echo "::error::Secret mancante: $name"; exit 1; fi
+          done
           if python tennis_bot_nuovo.py > /tmp/tennis-run.log 2>&1; then
             echo "Controllo completato."
             grep -E '^(Alert rilevati|Partite live valide|Partite MoviOdds): [0-9]+$' /tmp/tennis-run.log || true
           else
+            python - <<'PY'
+          import json
+          from pathlib import Path
+          for line in Path("/tmp/tennis-run.log").read_text(errors="replace").splitlines():
+              if line.startswith("API_MONITOR: "):
+                  try:
+                      e = json.loads(line[len("API_MONITOR: "):])
+                      if e.get("service") in {"api.livetennisapi.com", "moviodds.com", "telegram"}:
+                          status = e.get("status")
+                          print("Diagnostica:", e["service"], "HTTP", status if isinstance(status, int) else "nessuna risposta")
+                  except (ValueError, TypeError):
+                      pass
+              elif line.startswith("ERRORE: Risposta LiveTennisAPI senza elenco data"):
+                  print("Diagnostica: formato LiveTennisAPI inatteso")
+              elif line.startswith("ERRORE: Risposta MoviOdds senza matches"):
+                  print("Diagnostica: formato MoviOdds inatteso")
+          PY
             echo "::error::Controllo fallito; dettagli riservati non pubblicati."
             exit 1
           fi
