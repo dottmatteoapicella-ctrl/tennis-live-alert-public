@@ -1,0 +1,37 @@
+name: Test Telegram
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/test-telegram.yml'
+permissions:
+  contents: read
+jobs:
+  telegram:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Invia messaggio di prova
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python3 - <<'PY'
+          import os, json, urllib.request, urllib.parse
+          token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+          chat = os.environ.get("TELEGRAM_CHAT_ID", "")
+          if not token or not chat:
+              raise SystemExit("Secret Telegram mancante")
+          try:
+              data = urllib.parse.urlencode({"chat_id": chat, "text": "🎾 TEST TENNIS – Connessione Telegram OK"}).encode()
+              req = urllib.request.Request("https://api.telegram.org/bot" + token + "/sendMessage", data=data)
+              with urllib.request.urlopen(req, timeout=20) as response:
+                  result = json.load(response)
+              if result.get("ok") is not True:
+                  raise SystemExit("Telegram non ha confermato l'invio")
+              print("Telegram: invio confermato")
+          except urllib.error.HTTPError as exc:
+              raise SystemExit("Telegram HTTP " + str(exc.code)) from None
+          except Exception as exc:
+              raise SystemExit("Telegram: " + type(exc).__name__) from None
+          PY
