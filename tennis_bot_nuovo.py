@@ -764,6 +764,9 @@ def main():
 
     save_state(state)
 
+    if not dry_run:
+        tennis_telegram_outcomes.print_favorite_statistics(state)
+
     print("Alert rilevati:", alerts)
     print(
         "Favoriti memorizzati:",
