@@ -61,7 +61,7 @@ jobs:
           grep -E '^Diagnostica MoviOdds: (HTTP [0-9]{3}( (JSON|HTML|altro))?|bytes [0-9]+|corpo (vuoto|HTML|JSON|altro)|redirect non seguito|[A-Za-z]+Error|[A-Za-z]*Timeout|formato inatteso|JSON non valido|autenticazione e risposta OK|quote in cache soltanto)$' /tmp/tennis-run.log || true
           if [ "$rc" -eq 0 ]; then
             echo "Controllo completato."
-            grep -E '^Diagnostica esiti tennis: pending=[0-9]+ missing_match=[0-9]+ player_mismatch=[0-9]+ unverified_result=[0-9]+ invalid_record=[0-9]+ edit_failed=[0-9]+ updated=[0-9]+$|^Risultati tennis conclusi: elenco non disponibile$|^Risultati tennis conclusi non disponibili: [A-Za-z]+$' /tmp/tennis-run.log || true
+            grep -E '^Diagnostica esiti tennis: pending=[0-9]+ missing_match=[0-9]+ player_mismatch=[0-9]+ unverified_result=[0-9]+ invalid_record=[0-9]+ edit_failed=[0-9]+ updated=[0-9]+$|^Risultati tennis conclusi: elenco non disponibile$|^Risultati tennis conclusi non disponibili: [A-Za-z]+$|^Risultati tennis dettaglio HTTP: [0-9]+$|^Risultati tennis dettaglio non disponibile$|^Risultati tennis dettagli recuperati: [0-9]+$' /tmp/tennis-run.log || true
             grep -E '^Diagnostica favorito: (associato|ambiguo|assente)$' /tmp/tennis-run.log | sort | uniq -c || true
             grep -E '^(Alert rilevati|Partite live valide|Partite MoviOdds|Favoriti memorizzati|Coppie quote pre-match valide|Coppie quote pre-match ambigue): [0-9]+$' /tmp/tennis-run.log || true
           else
