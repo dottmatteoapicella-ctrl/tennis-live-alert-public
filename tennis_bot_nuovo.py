@@ -198,7 +198,23 @@ def get_live(key):
 def get_odds_matches(key):
     for attempt in range(2):
         try:
-            payload = request_json(ODDS_URL, key, {"sport": "tennis"})
+            response = requests.get(
+                ODDS_URL,
+                headers={"X-API-Key": key, "Accept": "application/json",
+                         "Accept-Encoding": "gzip"},
+                params={"sport": "tennis"},
+                timeout=30,
+                allow_redirects=False,
+            )
+            content_type = response.headers.get("Content-Type", "").lower()
+            kind = ("JSON" if "json" in content_type else
+                    "HTML" if "html" in content_type else "altro")
+            print("Diagnostica MoviOdds: HTTP", response.status_code, kind)
+            if 300 <= response.status_code < 400:
+                print("Diagnostica MoviOdds: redirect non seguito")
+                return []
+            response.raise_for_status()
+            payload = response.json()
             matches = payload.get("matches") if isinstance(payload, dict) else None
             if not isinstance(matches, list):
                 print("Diagnostica MoviOdds: formato inatteso")
