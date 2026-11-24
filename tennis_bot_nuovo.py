@@ -45,6 +45,31 @@ def pair_key(a, b):
     return "|".join(names)
 
 
+def name_matches(a, b):
+    a, b = normalized(a).split(), normalized(b).split()
+    return bool(a and b and sorted(a) == sorted(b))
+
+
+def resolve_favorite(names, favorites):
+    # Match both players, allowing reordered full names only.
+    # Reject ambiguous candidates and remap odds to live names.
+    matches = []
+    for key, info in favorites.items():
+        parts = key.split("|")
+        if len(parts) != 2 or not isinstance(info, dict):
+            continue
+        for a, b in (parts, parts[::-1]):
+            if name_matches(names[0], a) and name_matches(names[1], b):
+                odds = info.get("odds", {})
+                if a not in odds or b not in odds or info.get("favorite") not in (a, b):
+                    continue
+                mapped = dict(info)
+                mapped["odds"] = {normalized(names[0]): odds[a], normalized(names[1]): odds[b]}
+                mapped["favorite"] = normalized(names[0] if info["favorite"] == a else names[1])
+                matches.append(mapped)
+    return (matches[0], "associato") if len(matches) == 1 else (None, "ambiguo" if matches else "assente")
+
+
 def players_of(match):
     players = match.get("players") or {}
 
@@ -295,11 +320,10 @@ def winner_quotes(match):
             quote.get("label") or quote.get("side")
         )
 
-        if label not in (
-            normalized(a),
-            normalized(b)
-        ):
+        matching = [normalized(n) for n in (a, b) if name_matches(label, n)]
+        if len(matching) != 1:
             continue
+        label = matching[0]
 
         try:
             odds = float(quote.get("odds_dec"))
@@ -501,6 +525,8 @@ def main():
                 key, []
             ).append(info)
 
+    print("Coppie quote pre-match valide:", len(odds_candidates))
+    print("Coppie quote pre-match ambigue:", sum(len(v) != 1 for v in odds_candidates.values()))
     now = datetime.now(UTC)
 
     for key, candidates in odds_candidates.items():
@@ -603,11 +629,9 @@ def main():
         )
 
         # Quote disponibili per questa coppia.
-        info = (
-            state["favorites"].get(key)
-            if key and counts.get(key) == 1
-            else None
-        )
+        info, reason = (resolve_favorite(names, state["favorites"])
+                        if key and counts.get(key) == 1 else (None, "ambiguo"))
+        print("Diagnostica favorito:", reason)
 
         # Il testo base viene usato in entrambi gli alert.
         base = (
