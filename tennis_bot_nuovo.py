@@ -9,7 +9,6 @@ from pathlib import Path
 
 import requests
 import api_monitor
-api_monitor.install()
 
 
 LIVE_URL = "https://api.livetennisapi.com/api/public/v1/matches"
@@ -695,6 +694,7 @@ def main():
 
 
 if __name__ == "__main__":
+    api_monitor.install()
     try:
         main()
 
