@@ -4,8 +4,6 @@ on:
   push:
     paths:
       - '.github/workflows/tennis-nuovo.yml'
-  schedule:
-    - cron: '4,19,34,49 * * * *'
 permissions:
   contents: read
 concurrency:
