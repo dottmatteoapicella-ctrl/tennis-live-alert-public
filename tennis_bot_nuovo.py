@@ -202,7 +202,7 @@ def get_odds_matches(key):
                 ODDS_URL,
                 headers={"X-API-Key": key, "Accept": "application/json",
                          "Accept-Encoding": "gzip"},
-                params={"sport": "tennis"},
+                params={"sport": "tennis", "groups": "83"},
                 timeout=30,
                 allow_redirects=False,
             )
