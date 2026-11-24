@@ -27,14 +27,6 @@ jobs:
           if [[ "$ORA" > "0759" && "$ORA" < "2300" ]]; then
             echo "attivo=true" >> "$GITHUB_OUTPUT"
           fi
-      - uses: actions/checkout@v4
-        if: steps.orario.outputs.attivo == 'true'
-      - uses: actions/setup-python@v5
-        if: steps.orario.outputs.attivo == 'true'
-        with:
-          python-version: '3.11'
-      - run: pip install requests
-        if: steps.orario.outputs.attivo == 'true'
       - uses: actions/cache/restore@v4
         if: steps.orario.outputs.attivo == 'true'
         with:
@@ -70,46 +62,6 @@ jobs:
           if [ "$rc" -eq 0 ]; then
             echo "Controllo completato."
             grep -E '^Diagnostica esiti tennis: pending=[0-9]+ missing_match=[0-9]+ player_mismatch=[0-9]+ unverified_result=[0-9]+ invalid_record=[0-9]+ edit_failed=[0-9]+ updated=[0-9]+$|^Risultati tennis conclusi: elenco non disponibile$|^Risultati tennis conclusi non disponibili: [A-Za-z]+$' /tmp/tennis-run.log || true
-            grep -E '^Diagnostica favorito: (associato|ambiguo|assente)$' /tmp/tennis-run.log | sort | uniq -c || true
-            grep -E '^(Alert rilevati|Partite live valide|Partite MoviOdds|Favoriti memorizzati|Coppie quote pre-match valide|Coppie quote pre-match ambigue): [0-9]+$' /tmp/tennis-run.log || true
-          else
-            python - <<'PY'
-          import json
-          from pathlib import Path
-          for line in Path("/tmp/tennis-run.log").read_text(errors="replace").splitlines():
-              if line.startswith("API_MONITOR: "):
-                  try:
-                      e = json.loads(line[len("API_MONITOR: "):])
-                      if e.get("service") in {"api.livetennisapi.com", "moviodds.com", "telegram"}:
-                          status = e.get("status")
-                          print("Diagnostica:", e["service"], "HTTP", status if isinstance(status, int) else "nessuna risposta")
-                  except (ValueError, TypeError):
-                      pass
-              elif line.startswith("ERRORE: Risposta LiveTennisAPI senza elenco data"):
-                  print("Diagnostica: formato LiveTennisAPI inatteso")
-              elif line.startswith("ERRORE: Risposta MoviOdds senza matches"):
-                  print("Diagnostica: formato MoviOdds inatteso")
-          PY
-            echo "::error::Controllo fallito; dettagli riservati non pubblicati."
-            exit 1
-          fi
-      - name: Cifra stato
-        id: encrypt
-        if: always() && steps.orario.outputs.attivo == 'true'
-        env:
-          STATE_PASSWORD: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-        run: |
-          if [ -s tennis_stato_nuovo.json ] && [ -n "$STATE_PASSWORD" ]; then
-            python -m json.tool tennis_stato_nuovo.json >/dev/null
-            openssl enc -aes-256-cbc -salt -pbkdf2 -iter 200000 -in tennis_stato_nuovo.json -out tennis-state.enc -pass env:STATE_PASSWORD
-            echo "saved=true" >> "$GITHUB_OUTPUT"
-          fi
-      - uses: actions/cache/save@v4
-        if: always() && steps.encrypt.outputs.saved == 'true'
-        with:
-          path: tennis-state.enc
-          key: tennis-encrypted-v1-${{ github.run_id }}-${{ github.run_attempt }}
- /tmp/tennis-run.log || true
             grep -E '^Diagnostica favorito: (associato|ambiguo|assente)$' /tmp/tennis-run.log | sort | uniq -c || true
             grep -E '^(Alert rilevati|Partite live valide|Partite MoviOdds|Favoriti memorizzati|Coppie quote pre-match valide|Coppie quote pre-match ambigue): [0-9]+$' /tmp/tennis-run.log || true
           else
