@@ -583,16 +583,33 @@ def main():
     if not dry_run:
         import tennis_telegram_outcomes
         tennis_telegram_outcomes.update_from_matches(state, live, token, chat_id)
-        if any(not x.get("finalized") for x in state["telegram_alerts"].values()):
+        live_ids = {str(m.get("id")) for m in live}
+        pending_ids = sorted({str(r.get("match_id")) for r in state["telegram_alerts"].values()
+                              if not r.get("finalized") and r.get("message_id")
+                              and str(r.get("match_id", "")).isdigit()
+                              and str(r.get("match_id")) not in live_ids})
+        # Rotate a bounded batch so older unavailable matches cannot block others.
+        cursor = int(state.get("outcome_cursor", 0)) % max(1, len(pending_ids))
+        batch = (pending_ids[cursor:] + pending_ids[:cursor])[:4]
+        details = []
+        for match_id in batch:
             try:
-                finished_payload = request_json(LIVE_URL, live_key, {"status": "finished"})
-                finished = finished_payload.get("data") if isinstance(finished_payload, dict) else None
-                if isinstance(finished, list):
-                    tennis_telegram_outcomes.update_from_matches(state, finished, token, chat_id)
-                else:
-                    print("Risultati tennis conclusi: elenco non disponibile")
-            except (requests.RequestException, ValueError) as exc:
-                print("Risultati tennis conclusi non disponibili:", type(exc).__name__)
+                payload = request_json(f"{LIVE_URL}/{match_id}", live_key, {})
+                detail = payload.get("data", payload) if isinstance(payload, dict) else None
+                if isinstance(detail, dict) and str(detail.get("id")) == match_id:
+                    details.append(detail)
+            except requests.HTTPError as exc:
+                status = exc.response.status_code if exc.response is not None else 0
+                print("Risultati tennis dettaglio HTTP:", status)
+                if status in (401, 403, 429):
+                    break
+            except (requests.RequestException, ValueError):
+                print("Risultati tennis dettaglio non disponibile")
+                break
+        state["outcome_cursor"] = cursor + len(batch)
+        print("Risultati tennis dettagli recuperati:", len(details))
+        if details:
+            tennis_telegram_outcomes.update_from_matches(state, details, token, chat_id)
         save_state(state)
 
     alerts = 0
