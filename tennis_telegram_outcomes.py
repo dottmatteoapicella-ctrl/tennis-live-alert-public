@@ -33,34 +33,42 @@ def result_of(match):
 def update_from_matches(state, matches, token, chat_id):
     by_id = {str(m["id"]): m for m in matches if isinstance(m, dict) and m.get("id") is not None}
     updated = 0
+    counts = dict(pending=0, missing_match=0, player_mismatch=0, unverified_result=0, invalid_record=0, edit_failed=0)
     for record in state.get("telegram_alerts", {}).values():
         if record.get("finalized") or not record.get("message_id"):
             continue
+        counts["pending"] += 1
         match = by_id.get(str(record.get("match_id")))
         if not match:
+            counts["missing_match"] += 1
             continue
         # Require the same player order to prevent mismatched match IDs.
         players = match.get("players") or {}
         p1 = (players.get("p1") or {}).get("name")
         p2 = (players.get("p2") or {}).get("name")
         if [p1, p2] != record.get("players"):
+            counts["player_mismatch"] += 1
             continue
         result = result_of(match)
         if result is None:
+            counts["unverified_result"] += 1
             continue
         winner, sets, games = result
         kind = record.get("alert_type")
         if kind == "favorito_primo_set":
             favorite = record.get("favorite_idx")
             if favorite not in (0, 1):
+                counts["invalid_record"] += 1
                 continue
             success = winner != favorite
         elif kind == "rimonta_terzo_set":
             first = record.get("first_set_winner_idx")
             if first not in (0, 1):
+                counts["invalid_record"] += 1
                 continue
             success = winner == first
         else:
+            counts["invalid_record"] += 1
             continue
         marker = "✅ PRONOSTICO CONFERMATO" if success else "❌ PRONOSTICO NON CONFERMATO"
         body = (record["text"] + "\n\n" + marker +
@@ -77,10 +85,12 @@ def update_from_matches(state, matches, token, chat_id):
             if not response.json().get("ok"):
                 raise ValueError("Telegram edit not confirmed")
         except (requests.RequestException, ValueError) as exc:
+            counts["edit_failed"] += 1
             print("Aggiornamento Telegram tennis fallito:", record.get("match_id"), type(exc).__name__)
             continue
         record["finalized"] = True
         record["result_marker"] = marker
         updated += 1
+    print("Diagnostica esiti tennis:", " ".join(f"{k}={v}" for k, v in counts.items()), f"updated={updated}")
     print("Alert tennis aggiornati con finale:", updated)
     return updated
