@@ -65,6 +65,7 @@ jobs:
           for name in TENNIS_API_KEY MOVIODDS_API_KEY TELEGRAM_BOT_TOKEN TELEGRAM_CHAT_ID; do
             if [ -z "${!name}" ]; then echo "::error::Secret mancante: $name"; exit 1; fi
           done
+          # Refresh limited tennis market feed
           rc=0
           python tennis_bot_nuovo.py > /tmp/tennis-run.log 2>&1 || rc=$?
           grep -E '^Diagnostica MoviOdds: (HTTP [0-9]{3}( (JSON|HTML|altro))?|redirect non seguito|[A-Za-z]+Error|[A-Za-z]*Timeout|formato inatteso|JSON non valido|autenticazione e risposta OK|quote in cache soltanto)$' /tmp/tennis-run.log || true
