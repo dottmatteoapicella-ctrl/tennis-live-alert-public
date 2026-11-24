@@ -88,9 +88,52 @@ def update_from_matches(state, matches, token, chat_id):
             counts["edit_failed"] += 1
             print("Aggiornamento Telegram tennis fallito:", record.get("match_id"), type(exc).__name__)
             continue
+        record["winner_idx"] = winner
         record["finalized"] = True
         record["result_marker"] = marker
         updated += 1
     print("Diagnostica esiti tennis:", " ".join(f"{k}={v}" for k, v in counts.items()), f"updated={updated}")
     print("Alert tennis aggiornati con finale:", updated)
     return updated
+
+
+def favorite_statistics(state):
+    """Count unique alerted matches with an explicitly known pre-match favorite."""
+    groups = {}
+    for record in state.get("telegram_alerts", {}).values():
+        if record.get("alert_type") != "favorito_primo_set" or not record.get("message_id"):
+            continue
+        match_id = record.get("match_id")
+        if match_id is None:
+            continue
+        groups.setdefault(str(match_id), []).append(record)
+    wins = losses = pending = unknown = 0
+    for records in groups.values():
+        outcomes = set()
+        for record in records:
+            favorite = record.get("favorite_idx")
+            if not record.get("finalized") or favorite not in (0, 1):
+                continue
+            winner = record.get("winner_idx")
+            if winner in (0, 1):
+                outcomes.add(winner == favorite)
+            elif record.get("result_marker") == "✅ PRONOSTICO CONFERMATO":
+                outcomes.add(False)
+            elif record.get("result_marker") == "❌ PRONOSTICO NON CONFERMATO":
+                outcomes.add(True)
+        if outcomes == {True}:
+            wins += 1
+        elif outcomes == {False}:
+            losses += 1
+        elif not outcomes and all(not r.get("finalized") for r in records):
+            pending += 1
+        else:
+            unknown += 1
+    total = wins + losses
+    return dict(matches=len(groups), wins=wins, losses=losses, pending=pending,
+                unknown=unknown, win_pct=round(100 * wins / total, 2) if total else None)
+
+
+def print_favorite_statistics(state):
+    stats = favorite_statistics(state)
+    print("Statistiche favoriti tennis:", " ".join(f"{k}={v}" for k, v in stats.items()))
