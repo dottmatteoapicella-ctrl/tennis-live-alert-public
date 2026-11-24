@@ -1,0 +1,85 @@
+name: Tennis Live Alert
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '4,19,34,49 * * * *'
+permissions:
+  contents: read
+concurrency:
+  group: tennis-live-alert
+  cancel-in-progress: false
+jobs:
+  tennis-alert:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install requests
+      - run: python -m unittest discover -v
+      - name: Orario italiano
+        id: orario
+        run: |
+          ORA=$(TZ=Europe/Rome date +%H%M)
+          if [[ "$ORA" > "0759" && "$ORA" < "2300" ]]; then
+            echo "attivo=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v4
+        if: steps.orario.outputs.attivo == 'true'
+      - uses: actions/setup-python@v5
+        if: steps.orario.outputs.attivo == 'true'
+        with:
+          python-version: '3.11'
+      - run: pip install requests
+        if: steps.orario.outputs.attivo == 'true'
+      - uses: actions/cache/restore@v4
+        if: steps.orario.outputs.attivo == 'true'
+        with:
+          path: tennis-state.enc
+          key: tennis-encrypted-v1-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: tennis-encrypted-v1-
+      - name: Ripristina stato protetto
+        if: steps.orario.outputs.attivo == 'true'
+        env:
+          STATE_PASSWORD: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        run: |
+          test -n "$STATE_PASSWORD"
+          if [ -f tennis-state.enc ]; then
+            openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -in tennis-state.enc -out tennis_stato_nuovo.json -pass env:STATE_PASSWORD
+            python -m json.tool tennis_stato_nuovo.json >/dev/null
+          fi
+      - name: Controlla partite
+        if: steps.orario.outputs.attivo == 'true'
+        env:
+          TENNIS_API_KEY: ${{ secrets.TENNIS_API_KEY }}
+          MOVIODDS_API_KEY: ${{ secrets.MOVIODDS_API_KEY }}
+          TENNIS_DRY_RUN: '0'
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          test -n "$TENNIS_API_KEY" && test -n "$MOVIODDS_API_KEY" && test -n "$TELEGRAM_BOT_TOKEN" && test -n "$TELEGRAM_CHAT_ID"
+          if python tennis_bot_nuovo.py > /tmp/tennis-run.log 2>&1; then
+            echo "Controllo completato."
+            grep -E '^(Alert rilevati|Partite live valide|Partite MoviOdds): [0-9]+$' /tmp/tennis-run.log || true
+          else
+            echo "::error::Controllo fallito; dettagli riservati non pubblicati."
+            exit 1
+          fi
+      - name: Cifra stato
+        id: encrypt
+        if: always() && steps.orario.outputs.attivo == 'true'
+        env:
+          STATE_PASSWORD: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        run: |
+          if [ -s tennis_stato_nuovo.json ] && [ -n "$STATE_PASSWORD" ]; then
+            python -m json.tool tennis_stato_nuovo.json >/dev/null
+            openssl enc -aes-256-cbc -salt -pbkdf2 -iter 200000 -in tennis_stato_nuovo.json -out tennis-state.enc -pass env:STATE_PASSWORD
+            echo "saved=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/cache/save@v4
+        if: always() && steps.encrypt.outputs.saved == 'true'
+        with:
+          path: tennis-state.enc
+          key: tennis-encrypted-v1-${{ github.run_id }}-${{ github.run_attempt }}
