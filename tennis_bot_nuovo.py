@@ -456,6 +456,27 @@ def prematch_odds_text(names, info):
 # PROGRAMMA PRINCIPALE
 # ==========================================
 
+def reserve_tennis_request(state, kind, now):
+    # UTC day is provisional until provider reset timezone is confirmed.
+    day = now.astimezone(UTC).date().isoformat()
+    budget = state.get("tennis_api_budget", {})
+    if budget.get("day") != day:
+        budget = {"day": day, "live": 0, "detail": 0, "blocked": False}
+        state["tennis_api_budget"] = budget
+    if budget.get("blocked") or budget["live"] + budget["detail"] >= 90:
+        return False
+    if kind == "detail" and budget["detail"] >= 26:
+        return False
+    budget[kind] += 1
+    save_state(state)
+    return True
+
+
+def block_tennis_budget(state):
+    state["tennis_api_budget"]["blocked"] = True
+    save_state(state)
+
+
 def main():
     live_key = os.environ.get(
         "TENNIS_API_KEY", ""
@@ -492,7 +513,17 @@ def main():
 
     state = load_state()
 
-    live = get_live(live_key)
+    if not reserve_tennis_request(state, "live", datetime.now(UTC)):
+        print("Budget LiveTennisAPI: sospeso fino al prossimo giorno UTC")
+        return
+    try:
+        live = get_live(live_key)
+    except requests.HTTPError as exc:
+        if exc.response is not None and exc.response.status_code == 429:
+            block_tennis_budget(state)
+            print("Budget LiveTennisAPI: HTTP 429, sospeso")
+            return
+        raise
     print("Partite live valide:", len(live))
 
     odds_matches = get_odds_matches(odds_key)
@@ -592,7 +623,11 @@ def main():
         cursor = int(state.get("outcome_cursor", 0)) % max(1, len(pending_ids))
         batch = (pending_ids[cursor:] + pending_ids[:cursor])[:4]
         details = []
+        attempted = 0
         for match_id in batch:
+            if not reserve_tennis_request(state, "detail", datetime.now(UTC)):
+                break
+            attempted += 1
             try:
                 payload = request_json(f"{LIVE_URL}/{match_id}", live_key, {})
                 detail = payload.get("data", payload) if isinstance(payload, dict) else None
@@ -601,12 +636,14 @@ def main():
             except requests.HTTPError as exc:
                 status = exc.response.status_code if exc.response is not None else 0
                 print("Risultati tennis dettaglio HTTP:", status)
+                if status == 429:
+                    block_tennis_budget(state)
                 if status in (401, 403, 429):
                     break
             except (requests.RequestException, ValueError):
                 print("Risultati tennis dettaglio non disponibile")
                 break
-        state["outcome_cursor"] = cursor + len(batch)
+        state["outcome_cursor"] = cursor + attempted
         print("Risultati tennis dettagli recuperati:", len(details))
         if details:
             tennis_telegram_outcomes.update_from_matches(state, details, token, chat_id)
