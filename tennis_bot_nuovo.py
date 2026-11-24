@@ -214,7 +214,16 @@ def get_odds_matches(key):
                 print("Diagnostica MoviOdds: redirect non seguito")
                 return []
             response.raise_for_status()
-            payload = response.json()
+            print("Diagnostica MoviOdds: bytes", len(response.content))
+            try:
+                payload = response.json()
+            except ValueError:
+                body = response.content.lstrip()
+                shape = ("vuoto" if not body else "HTML" if body.startswith(b"<")
+                         else "JSON" if body.startswith((b"{", b"["))
+                         else "altro")
+                print("Diagnostica MoviOdds: corpo", shape)
+                return []
             matches = payload.get("matches") if isinstance(payload, dict) else None
             if not isinstance(matches, list):
                 print("Diagnostica MoviOdds: formato inatteso")
