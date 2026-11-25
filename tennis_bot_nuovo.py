@@ -620,8 +620,6 @@ def main():
                               and str(r.get("match_id", "")).isdigit()
                               and str(r.get("match_id")) not in live_ids})
         # Rotate a bounded batch so older unavailable matches cannot block others.
-        cursor = int(state.get("outcome_cursor", 0)) % max(1, len(pending_ids))
-        batch = (pending_ids[cursor:] + pending_ids[:cursor])[:4]
         details = []
         # Batch completed results before spending credits on individual matches.
         # Spread the existing detail allowance across the operating day.
@@ -653,7 +651,8 @@ def main():
         pending_ids = [mid for mid in pending_ids if any(
             not r.get("finalized") and str(r.get("match_id")) == mid
             for r in state["telegram_alerts"].values())]
-        batch = (pending_ids[cursor:] + pending_ids[:cursor])[:1] if due else []
+        cursor = int(state.get("outcome_cursor", 0)) % max(1, len(pending_ids))
+        batch = (pending_ids[cursor:] + pending_ids[:cursor])[:1] if due and now.hour >= 18 else []
         details = []
         attempted = 0
         for match_id in batch:
