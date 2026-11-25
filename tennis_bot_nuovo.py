@@ -6,6 +6,7 @@ import sys
 import unicodedata
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import requests
 import api_monitor
@@ -463,6 +464,7 @@ def reserve_tennis_request(state, kind, now):
     if budget.get("day") != day:
         budget = {"day": day, "live": 0, "detail": 0, "blocked": False}
         state["tennis_api_budget"] = budget
+    print(f"Budget tennis: live={budget['live']} detail={budget['detail']} total={budget['live'] + budget['detail']} blocked={int(bool(budget.get('blocked')))}")
     if budget.get("blocked") or budget["live"] + budget["detail"] >= 90:
         return False
     if kind == "detail" and budget["detail"] >= 26:
@@ -624,19 +626,23 @@ def main():
         # Batch completed results before spending credits on individual matches.
         # Spread the existing detail allowance across the operating day.
         now = datetime.now(UTC)
-        last = state.get("completed_results_checked_at", "")
-        try:
-            due = now - datetime.fromisoformat(last) >= timedelta(minutes=60)
-        except (ValueError, TypeError):
-            due = True
+        local = now.astimezone(ZoneInfo("Europe/Rome"))
+        minute = local.hour * 60 + local.minute
+        slot = next((x for x in (12 * 60, 18 * 60, 22 * 60 + 45)
+                     if x <= minute < x + 15), None)
+        slot_key = f"{local.date()}:{slot}"
+        due = slot is not None and state.get("completed_results_slot") != slot_key
+        print(f"Recupero tennis: pending={len(pending_ids)} due={int(due)}")
         if pending_ids and due and reserve_tennis_request(state, "detail", now):
-            state["completed_results_checked_at"] = now.isoformat()
+            state["completed_results_slot"] = slot_key
+            save_state(state)
             try:
                 payload = request_json(LIVE_URL, live_key, {"status": "completed", "limit": 100})
                 rows = payload.get("data") if isinstance(payload, dict) else None
                 if isinstance(rows, list):
                     details = [m for m in rows if isinstance(m, dict)
                                and str(m.get("id")) in pending_ids]
+                    print(f"Recupero tennis elenco: rows={len(rows)} matched={len(details)}")
                     tennis_telegram_outcomes.update_from_matches(state, details, token, chat_id)
                 else:
                     print("Risultati tennis conclusi: elenco non disponibile")
@@ -648,38 +654,6 @@ def main():
             except (requests.RequestException, ValueError):
                 print("Risultati tennis dettaglio non disponibile")
             save_state(state)
-        pending_ids = [mid for mid in pending_ids if any(
-            not r.get("finalized") and str(r.get("match_id")) == mid
-            for r in state["telegram_alerts"].values())]
-        cursor = int(state.get("outcome_cursor", 0)) % max(1, len(pending_ids))
-        batch = (pending_ids[cursor:] + pending_ids[:cursor])[:1] if due and now.hour >= 18 else []
-        details = []
-        attempted = 0
-        for match_id in batch:
-            if not reserve_tennis_request(state, "detail", datetime.now(UTC)):
-                break
-            attempted += 1
-            try:
-                payload = request_json(f"{LIVE_URL}/{match_id}", live_key, {})
-                detail = payload.get("data", payload) if isinstance(payload, dict) else None
-                if isinstance(detail, dict) and str(detail.get("id")) == match_id:
-                    details.append(detail)
-            except requests.HTTPError as exc:
-                status = exc.response.status_code if exc.response is not None else 0
-                print("Risultati tennis dettaglio HTTP:", status)
-                if status == 429:
-                    block_tennis_budget(state)
-                if status in (401, 403, 429):
-                    break
-            except (requests.RequestException, ValueError):
-                print("Risultati tennis dettaglio non disponibile")
-                break
-        state["outcome_cursor"] = cursor + attempted
-        print("Risultati tennis dettagli recuperati:", len(details))
-        if details:
-            tennis_telegram_outcomes.update_from_matches(state, details, token, chat_id)
-        save_state(state)
-
     alerts = 0
 
     for match in live:
