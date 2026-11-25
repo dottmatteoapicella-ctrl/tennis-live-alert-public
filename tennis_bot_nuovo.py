@@ -463,6 +463,7 @@ def reserve_tennis_request(state, kind, now):
     if budget.get("day") != day:
         budget = {"day": day, "live": 0, "detail": 0, "blocked": False}
         state["tennis_api_budget"] = budget
+    print(f"Budget tennis: live={budget['live']} detail={budget['detail']} total={budget['live'] + budget['detail']} blocked={int(bool(budget.get('blocked')))}")
     if budget.get("blocked") or budget["live"] + budget["detail"] >= 90:
         return False
     if kind == "detail" and budget["detail"] >= 26:
@@ -629,6 +630,7 @@ def main():
             due = now - datetime.fromisoformat(last) >= timedelta(minutes=60)
         except (ValueError, TypeError):
             due = True
+        print(f"Recupero tennis: pending={len(pending_ids)} due={int(due)}")
         if pending_ids and due and reserve_tennis_request(state, "detail", now):
             state["completed_results_checked_at"] = now.isoformat()
             try:
@@ -637,6 +639,7 @@ def main():
                 if isinstance(rows, list):
                     details = [m for m in rows if isinstance(m, dict)
                                and str(m.get("id")) in pending_ids]
+                    print(f"Recupero tennis elenco: rows={len(rows)} matched={len(details)}")
                     tennis_telegram_outcomes.update_from_matches(state, details, token, chat_id)
                 else:
                     print("Risultati tennis conclusi: elenco non disponibile")
