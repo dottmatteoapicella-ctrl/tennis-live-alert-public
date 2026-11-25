@@ -466,7 +466,7 @@ def reserve_tennis_request(state, kind, now):
     print(f"Budget tennis: live={budget['live']} detail={budget['detail']} total={budget['live'] + budget['detail']} blocked={int(bool(budget.get('blocked')))}")
     if budget.get("blocked") or budget["live"] + budget["detail"] >= 90:
         return False
-    if kind == "detail" and budget["detail"] >= 26:
+    if kind == "detail" and budget["detail"] >= max(26, 90 - budget["live"] - max(0, (23 * 60 - (now.astimezone(UTC).hour * 60 + now.minute + 60)) // 15 + 1)):
         return False
     budget[kind] += 1
     save_state(state)
@@ -655,7 +655,7 @@ def main():
             not r.get("finalized") and str(r.get("match_id")) == mid
             for r in state["telegram_alerts"].values())]
         cursor = int(state.get("outcome_cursor", 0)) % max(1, len(pending_ids))
-        batch = (pending_ids[cursor:] + pending_ids[:cursor])[:1] if due and now.hour >= 18 else []
+        batch = (pending_ids[cursor:] + pending_ids[:cursor])[:2] if pending_ids else []
         details = []
         attempted = 0
         for match_id in batch:
