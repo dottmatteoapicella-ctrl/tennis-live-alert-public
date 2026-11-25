@@ -623,6 +623,38 @@ def main():
         cursor = int(state.get("outcome_cursor", 0)) % max(1, len(pending_ids))
         batch = (pending_ids[cursor:] + pending_ids[:cursor])[:4]
         details = []
+        # Batch completed results before spending credits on individual matches.
+        # Spread the existing detail allowance across the operating day.
+        now = datetime.now(UTC)
+        last = state.get("completed_results_checked_at", "")
+        try:
+            due = now - datetime.fromisoformat(last) >= timedelta(minutes=60)
+        except (ValueError, TypeError):
+            due = True
+        if pending_ids and due and reserve_tennis_request(state, "detail", now):
+            state["completed_results_checked_at"] = now.isoformat()
+            try:
+                payload = request_json(LIVE_URL, live_key, {"status": "completed", "limit": 100})
+                rows = payload.get("data") if isinstance(payload, dict) else None
+                if isinstance(rows, list):
+                    details = [m for m in rows if isinstance(m, dict)
+                               and str(m.get("id")) in pending_ids]
+                    tennis_telegram_outcomes.update_from_matches(state, details, token, chat_id)
+                else:
+                    print("Risultati tennis conclusi: elenco non disponibile")
+            except requests.HTTPError as exc:
+                status = exc.response.status_code if exc.response is not None else 0
+                print("Risultati tennis dettaglio HTTP:", status)
+                if status == 429:
+                    block_tennis_budget(state)
+            except (requests.RequestException, ValueError):
+                print("Risultati tennis dettaglio non disponibile")
+            save_state(state)
+        pending_ids = [mid for mid in pending_ids if any(
+            not r.get("finalized") and str(r.get("match_id")) == mid
+            for r in state["telegram_alerts"].values())]
+        batch = (pending_ids[cursor:] + pending_ids[:cursor])[:1] if due else []
+        details = []
         attempted = 0
         for match_id in batch:
             if not reserve_tennis_request(state, "detail", datetime.now(UTC)):
