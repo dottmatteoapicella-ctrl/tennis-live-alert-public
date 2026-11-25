@@ -59,6 +59,50 @@ jobs:
           rc=0
           python tennis_bot_nuovo.py > /tmp/tennis-run.log 2>&1 || rc=$?
           grep -E '^Diagnostica MoviOdds: (HTTP [0-9]{3}( (JSON|HTML|altro))?|bytes [0-9]+|corpo (vuoto|HTML|JSON|altro)|redirect non seguito|[A-Za-z]+Error|[A-Za-z]*Timeout|formato inatteso|JSON non valido|autenticazione e risposta OK|quote in cache soltanto)$' /tmp/tennis-run.log || true
+          grep -E '^Budget tennis: live=[0-9]+ detail=[0-9]+ total=[0-9]+ blocked=[01]$|^Recupero tennis: pending=[0-9]+ due=[01]$|^Recupero tennis elenco: rows=[0-9]+ matched=[0-9]+
+            echo "Controllo completato."
+            grep -E '^Statistiche favoriti tennis: matches=[0-9]+ wins=[0-9]+ losses=[0-9]+ pending=[0-9]+ unknown=[0-9]+ win_pct=(None|[0-9]+([.][0-9]+)?)$' /tmp/tennis-run.log || true
+            grep -E '^Diagnostica esiti tennis: pending=[0-9]+ missing_match=[0-9]+ player_mismatch=[0-9]+ unverified_result=[0-9]+ invalid_record=[0-9]+ edit_failed=[0-9]+ updated=[0-9]+$|^Risultati tennis conclusi: elenco non disponibile$|^Risultati tennis conclusi non disponibili: [A-Za-z]+$|^Risultati tennis dettaglio HTTP: [0-9]+$|^Risultati tennis dettaglio non disponibile$|^Risultati tennis dettagli recuperati: [0-9]+$' /tmp/tennis-run.log || true
+            grep -E '^Diagnostica favorito: (associato|ambiguo|assente)$' /tmp/tennis-run.log | sort | uniq -c || true
+            grep -E '^(Alert rilevati|Partite live valide|Partite MoviOdds|Favoriti memorizzati|Coppie quote pre-match valide|Coppie quote pre-match ambigue): [0-9]+$' /tmp/tennis-run.log || true
+          else
+            python - <<'PY'
+          import json
+          from pathlib import Path
+          for line in Path("/tmp/tennis-run.log").read_text(errors="replace").splitlines():
+              if line.startswith("API_MONITOR: "):
+                  try:
+                      e = json.loads(line[len("API_MONITOR: "):])
+                      if e.get("service") in {"api.livetennisapi.com", "moviodds.com", "telegram"}:
+                          status = e.get("status")
+                          print("Diagnostica:", e["service"], "HTTP", status if isinstance(status, int) else "nessuna risposta")
+                  except (ValueError, TypeError):
+                      pass
+              elif line.startswith("ERRORE: Risposta LiveTennisAPI senza elenco data"):
+                  print("Diagnostica: formato LiveTennisAPI inatteso")
+              elif line.startswith("ERRORE: Risposta MoviOdds senza matches"):
+                  print("Diagnostica: formato MoviOdds inatteso")
+          PY
+            echo "::error::Controllo fallito; dettagli riservati non pubblicati."
+            exit 1
+          fi
+      - name: Cifra stato
+        id: encrypt
+        if: always() && steps.orario.outputs.attivo == 'true'
+        env:
+          STATE_PASSWORD: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        run: |
+          if [ -s tennis_stato_nuovo.json ] && [ -n "$STATE_PASSWORD" ]; then
+            python -m json.tool tennis_stato_nuovo.json >/dev/null
+            openssl enc -aes-256-cbc -salt -pbkdf2 -iter 200000 -in tennis_stato_nuovo.json -out tennis-state.enc -pass env:STATE_PASSWORD
+            echo "saved=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/cache/save@v4
+        if: always() && steps.encrypt.outputs.saved == 'true'
+        with:
+          path: tennis-state.enc
+          key: tennis-encrypted-v1-${{ github.run_id }}-${{ github.run_attempt }}
+ /tmp/tennis-run.log || true
           if [ "$rc" -eq 0 ]; then
             echo "Controllo completato."
             grep -E '^Statistiche favoriti tennis: matches=[0-9]+ wins=[0-9]+ losses=[0-9]+ pending=[0-9]+ unknown=[0-9]+ win_pct=(None|[0-9]+([.][0-9]+)?)$' /tmp/tennis-run.log || true
