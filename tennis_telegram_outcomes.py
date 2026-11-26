@@ -12,7 +12,9 @@ def result_with_reason(match):
     event_status = str(match.get("event_status") or "").strip().lower()
     if outcome and outcome != "completed":
         return None, "outcome_not_completed"
-    if status and status not in FINISHED:
+    # Legacy event_status is authoritative unless another field explicitly contradicts it.
+    nonfinal = {"live", "inprogress", "in_progress", "scheduled", "notstarted", "not_started", "retired", "cancelled", "canceled", "walkover", "abandoned", "interrupted", "postponed", "suspended", "unresolved"}
+    if status and status not in FINISHED and (event_status not in FINISHED or status in nonfinal):
         return None, "status_not_final"
     if event_status and event_status not in FINISHED:
         return None, "event_status_not_final"
