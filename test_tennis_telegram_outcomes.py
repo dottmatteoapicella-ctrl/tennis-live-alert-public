@@ -20,6 +20,16 @@ class OutcomeTests(unittest.TestCase):
         m.update(status="completed", outcome="unresolved")
         self.assertIsNone(outcomes.result_of(m))
 
+    def test_legacy_final_with_auxiliary_status(self):
+        m = match([[6,6],[4,3]])
+        m.update(status="archived")
+        self.assertEqual(outcomes.result_of(m)[0], 0)
+
+    def test_legacy_final_with_conflicting_live_status(self):
+        m = match([[6,6],[4,3]])
+        m.update(status="live")
+        self.assertIsNone(outcomes.result_of(m))
+
     def test_no_result_when_live(self):
         self.assertIsNone(outcomes.result_of(match([[6,6],[4,4]],"live")))
 
