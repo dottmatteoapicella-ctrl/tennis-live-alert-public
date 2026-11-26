@@ -481,6 +481,65 @@ def block_tennis_budget(state):
     save_state(state)
 
 
+
+def break_recovery_candidate(match, names, info):
+    # At an even number of games both players have served equally often.
+    # A two-game deficit therefore proves exactly one net break down.
+    score = score_of(match)
+    if not score or not info:
+        return None
+    p1, p2 = score
+    idx = len(p1) - 1
+    if any(set_winner(a, b) is None for a, b in zip(p1[:idx], p2[:idx])):
+        return None
+    favorite = info.get("favorite")
+    if favorite not in tuple(normalized(n) for n in names):
+        return None
+    side = 0 if favorite == normalized(names[0]) else 1
+    try:
+        odd = float(info["odds"][favorite])
+    except (KeyError, TypeError, ValueError):
+        return None
+    a, b = (p1[idx], p2[idx]) if side == 0 else (p2[idx], p1[idx])
+    if not 1.30 <= odd <= 1.80 or b - a != 2 or b > 5 or set_winner(a, b) is not None:
+        return None
+    return side, idx, a, b, odd
+
+
+def observe_break_recovery(state, live, counts, now, dry_run, token, chat_id):
+    for match in live:
+        names = players_of(match)
+        mid = str(match.get("id") or "")
+        key = pair_key(*names)
+        aid = mid + ":break_recovery"
+        if not mid or aid in state["sent"] or aid in state["telegram_alerts"] or counts.get(key) != 1:
+            continue
+        info, _ = resolve_favorite(names, state["favorites"])
+        candidate = break_recovery_candidate(match, names, info)
+        if candidate is None:
+            continue
+        side, idx, a, b, odd = candidate
+        message = (f"🎾 BREAK RECOVERY (TEST)\n\n{names[0]} vs {names[1]}\n"
+                   f"Favorito: {names[side]} | Quota pre-match: {odd:.2f}\n"
+                   f"Set {idx+1}: {a}-{b} (favorito-avversario)\n"
+                   "Un break netto di svantaggio. Obiettivo: recuperarlo nello stesso set.")
+        print("ALERT:", aid)
+        if dry_run:
+            continue
+        try:
+            message_id = send_telegram(token, chat_id, message)
+        except (requests.RequestException, ValueError):
+            print("Invio Break Recovery fallito")
+            continue
+        if message_id is None:
+            continue
+        state["telegram_alerts"][aid] = dict(match_id=mid, alert_type="break_recovery",
+            message_id=message_id, text=message, players=list(names), favorite_idx=side,
+            set_idx=idx, break_score=[a,b], created_at=now.isoformat(), finalized=False)
+        state["sent"][aid] = now.isoformat()
+        save_state(state)
+
+
 def main():
     live_key = os.environ.get(
         "TENNIS_API_KEY", ""
@@ -669,6 +728,7 @@ def main():
             except (requests.RequestException, ValueError):
                 print("Risultati tennis dettaglio non disponibile")
             save_state(state)
+    observe_break_recovery(state, live, counts, now, dry_run, token, chat_id)
     alerts = 0
 
     for match in live:
