@@ -7,7 +7,16 @@ FINISHED = {"finished", "completed", "complete", "ended", "final", "ft"}
 def result_of(match):
     if not isinstance(match, dict):
         return None
-    if str(match.get("event_status") or "").strip().lower() not in FINISHED:
+    outcome = str(match.get("outcome") or "").strip().lower()
+    status = str(match.get("status") or "").strip().lower()
+    event_status = str(match.get("event_status") or "").strip().lower()
+    if outcome and outcome != "completed":
+        return None
+    if status and status not in FINISHED:
+        return None
+    if event_status and event_status not in FINISHED:
+        return None
+    if not (outcome == "completed" or status in FINISHED or event_status in FINISHED):
         return None
     score = match.get("score")
     if not isinstance(score, dict) or score.get("stale") is True:
