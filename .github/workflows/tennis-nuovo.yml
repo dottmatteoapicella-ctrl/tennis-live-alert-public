@@ -25,9 +25,7 @@ jobs:
         id: orario
         run: |
           ORA=$(TZ=Europe/Rome date +%H%M)
-          if [[ "$ORA" > "0759" && "$ORA" < "2300" ]]; then
-            echo "attivo=true" >> "$GITHUB_OUTPUT"
-          fi
+          echo "attivo=true" >> "$GITHUB_OUTPUT"
       - uses: actions/cache/restore@v4
         if: steps.orario.outputs.attivo == 'true'
         with:
