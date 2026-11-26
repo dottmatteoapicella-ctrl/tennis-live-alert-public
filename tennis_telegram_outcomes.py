@@ -4,9 +4,9 @@ import requests
 
 FINISHED = {"finished", "completed", "complete", "ended", "final", "ft"}
 
-def result_of(match):
+def result_with_reason(match):
     if not isinstance(match, dict):
-        return None
+        return None, "sets_incomplete", "games_inconsistent", "games_invalid", "games_shape", "score_missing_or_stale", "no_final_indicator", "event_status_not_final", "status_not_final", "outcome_not_completed", "invalid_match"
     outcome = str(match.get("outcome") or "").strip().lower()
     status = str(match.get("status") or "").strip().lower()
     event_status = str(match.get("event_status") or "").strip().lower()
@@ -37,7 +37,11 @@ def result_of(match):
     if None in winners or sets[0] == sets[1] or max(sets) < 2:
         return None
     winner = 0 if sets[0] > sets[1] else 1
-    return winner, sets, " ".join(f"{a}-{b}" for a, b in zip(p1, p2))
+    return (winner, sets, " ".join(f"{a}-{b}" for a, b in zip(p1, p2))), "verified"
+
+
+def result_of(match):
+    return result_with_reason(match)[0]
 
 
 def break_result(record, match):
@@ -109,11 +113,13 @@ def update_from_matches(state, matches, token, chat_id):
                     updated += 1
                 else:
                     counts["unverified_result"] += 1
+                    print("Tennis final validation: break_recovery_unverified")
             except (requests.RequestException, ValueError):
                 counts["edit_failed"] += 1
             continue
-        result = result_of(match)
+        result, reason = result_with_reason(match)
         if result is None:
+            print("Tennis final validation:", reason)
             counts["unverified_result"] += 1
             continue
         winner, sets, games = result
