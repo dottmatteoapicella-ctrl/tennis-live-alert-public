@@ -469,7 +469,7 @@ def reserve_tennis_request(state, kind, now):
         return False
     if kind == "detail" and budget["detail"] >= 26:
         return False
-    if kind == "results" and budget.get("results", 0) >= 3:
+    if kind == "results" and budget.get("results", 0) >= 20:
         return False
     budget[kind] = budget.get(kind, 0) + 1
     save_state(state)
@@ -689,7 +689,7 @@ def main():
         now = datetime.now(UTC)
         local = now.astimezone(ZoneInfo("Europe/Rome"))
         minute = local.hour * 60 + local.minute
-        slot = max((x for x in (12 * 60, 18 * 60, 22 * 60 + 45) if x <= minute), default=None)
+        slot = (minute - 8 * 60) // 45 if 8 * 60 <= minute < 23 * 60 else None
         slot_key = f"{local.date()}:{slot}"
         due = slot is not None and state.get("completed_results_slot") != slot_key
         print(f"Recupero tennis: pending={len(pending_ids)} due={int(due)}")
@@ -698,10 +698,11 @@ def main():
             save_state(state)
             try:
                 # If the previous batch found nothing, use a targeted lookup.
-                if state.get("completed_batch_empty") and slot != 12 * 60:
+                if slot % 4 != 0:
                     cursor = state.get("results_cursor", 0)
                     mid = pending_ids[cursor % len(pending_ids)]
                     state["results_cursor"] = cursor + 1
+                    save_state(state)
                     payload = request_json(f"{LIVE_URL}/{mid}", live_key, {})
                     row = payload.get("data") if isinstance(payload, dict) else None
                     rows = [row] if isinstance(row, dict) else []
