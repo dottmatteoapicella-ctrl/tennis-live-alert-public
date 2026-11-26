@@ -519,7 +519,10 @@ def observe_break_recovery(state, live, counts, now, dry_run, token, chat_id):
         if candidate is None:
             continue
         side, idx, a, b, odd = candidate
-        message = (f"🎾 BREAK RECOVERY (TEST)\n\n{names[0]} vs {names[1]}\n"
+        tournament = match.get("tournament") or "Torneo non indicato"
+        if isinstance(tournament, dict):
+            tournament = tournament.get("name") or "Torneo non indicato"
+        message = (f"🎾 BREAK RECOVERY (TEST)\n\n🏆 {tournament}\n{names[0]} vs {names[1]}\n"
                    f"Favorito: {names[side]} | Quota pre-match: {odd:.2f}\n"
                    f"Set {idx+1}: {a}-{b} (favorito-avversario)\n"
                    "Un break netto di svantaggio. Obiettivo: recuperarlo nello stesso set.")
