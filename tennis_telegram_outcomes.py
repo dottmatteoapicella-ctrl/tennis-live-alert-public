@@ -30,6 +30,51 @@ def result_of(match):
     winner = 0 if sets[0] > sets[1] else 1
     return winner, sets, " ".join(f"{a}-{b}" for a, b in zip(p1, p2))
 
+
+def break_result(record, match):
+    from tennis_bot_nuovo import score_of, set_winner
+    score = match.get("score") or {}
+    if not isinstance(score, dict) or score.get("stale") is True:
+        return None
+    games = score_of(match)
+    idx, side = record.get("set_idx"), record.get("favorite_idx")
+    if not games or not isinstance(idx, int) or idx < 0 or side not in (0,1) or idx >= len(games[0]):
+        return None
+    a,b = games[side][idx], games[1-side][idx]
+    old = record.get("break_score")
+    if not isinstance(old,list) or len(old)!=2 or a<old[0] or b<old[1]:
+        return None
+    # Equal games prove equal net breaks; a set win also proves recovery.
+    if a == b or a > b:
+        return "success", a, b
+    # With an odd game count, server order is unknown. Do not infer recovery.
+    if set_winner(a,b) is None:
+        return None
+    # If the favorite never won another game, recovery was impossible.
+    if a == old[0]:
+        return "failure", a, b
+    # A skipped intermediate score may have contained a recovery.
+    return "unknown", a, b
+
+
+def update_break(record, match, token, chat_id):
+    outcome = break_result(record, match)
+    if outcome is None:
+        return False
+    status,a,b = outcome
+    marker = {"success":"✅ BREAK RECUPERATO", "failure":"❌ BREAK NON RECUPERATO",
+              "unknown":"⚪ RECUPERO NON VERIFICABILE"}[status]
+    response = requests.post(f"https://api.telegram.org/bot{token}/editMessageText",
+        data={"chat_id":chat_id,"message_id":record["message_id"],
+              "text":record["text"]+f"\n\n{marker}\nSet {record['set_idx']+1}: {a}-{b} (favorito-avversario)"},
+        timeout=20)
+    response.raise_for_status()
+    if not response.json().get("ok"):
+        raise ValueError("Telegram edit not confirmed")
+    record.update(finalized=True, break_outcome=status, result_marker=marker)
+    return True
+
+
 def update_from_matches(state, matches, token, chat_id):
     by_id = {str(m["id"]): m for m in matches if isinstance(m, dict) and m.get("id") is not None}
     updated = 0
@@ -48,6 +93,15 @@ def update_from_matches(state, matches, token, chat_id):
         p2 = (players.get("p2") or {}).get("name")
         if [p1, p2] != record.get("players"):
             counts["player_mismatch"] += 1
+            continue
+        if record.get("alert_type") == "break_recovery":
+            try:
+                if update_break(record, match, token, chat_id):
+                    updated += 1
+                else:
+                    counts["unverified_result"] += 1
+            except (requests.RequestException, ValueError):
+                counts["edit_failed"] += 1
             continue
         result = result_of(match)
         if result is None:
@@ -137,3 +191,9 @@ def favorite_statistics(state):
 def print_favorite_statistics(state):
     stats = favorite_statistics(state)
     print("Statistiche favoriti tennis:", " ".join(f"{k}={v}" for k, v in stats.items()))
+
+    records = [r for r in state.get("telegram_alerts", {}).values() if r.get("alert_type") == "break_recovery"]
+    totals = {k: sum(r.get("break_outcome", "pending") == k for r in records)
+              for k in ("success", "failure", "unknown", "pending")}
+    verified = totals["success"] + totals["failure"]
+    print("Statistiche Break Recovery:", totals, "success_pct=", round(100*totals["success"]/verified,2) if verified else None)
