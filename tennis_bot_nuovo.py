@@ -578,6 +578,19 @@ def recover_results(state, live, live_key, token, chat_id, dry_run):
                     details = [m for m in rows if isinstance(m, dict)
                                and str(m.get("id")) in pending_ids]
                     print(f"Recupero tennis elenco: rows={len(rows)} matched={len(details)}")
+                    for match in details:
+                        score = match.get("score")
+                        score = score if isinstance(score, dict) else {}
+                        def safe_status(value):
+                            return value if isinstance(value, str) and value.lower() in {"finished","completed","complete","ended","final","ft","live","inprogress","scheduled","retired","cancelled","walkover","notstarted","interrupted","abandoned","postponed"} else type(value).__name__
+                        print("Tennis result diagnostic:", json.dumps({
+                            "status": safe_status(match.get("status")),
+                            "outcome": safe_status(match.get("outcome")),
+                            "event_status": safe_status(match.get("event_status")),
+                            "score_stale": score.get("stale") is True,
+                            "games_shape": [len(v) if isinstance(v, list) else -1 for v in score.get("games", [])] if isinstance(score.get("games"), list) else None,
+                            "reason": tennis_telegram_outcomes.result_with_reason(match)[1]
+                        }))
                     tennis_telegram_outcomes.update_from_matches(state, details, token, chat_id)
                 else:
                     print("Risultati tennis conclusi: elenco non disponibile")
