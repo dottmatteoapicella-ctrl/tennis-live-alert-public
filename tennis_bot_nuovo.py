@@ -697,22 +697,15 @@ def main():
             state["completed_results_slot"] = slot_key
             save_state(state)
             try:
-                # If the previous batch found nothing, use a targeted lookup.
-                if slot % 4 != 0:
-                    cursor = state.get("results_cursor", 0)
-                    mid = pending_ids[cursor % len(pending_ids)]
-                    state["results_cursor"] = cursor + 1
-                    save_state(state)
-                    payload = request_json(f"{LIVE_URL}/{mid}", live_key, {})
-                    row = payload.get("data") if isinstance(payload, dict) else None
-                    rows = [row] if isinstance(row, dict) else []
-                    print("Recupero tennis individuale:", mid)
-                else:
-                    payload = request_json(LIVE_URL, live_key, {"status": "completed", "limit": 100})
-                    rows = payload.get("data") if isinstance(payload, dict) else None
-                    state["completed_batch_empty"] = not isinstance(rows, list) or not any(
-                        isinstance(m, dict) and str(m.get("id")) in pending_ids for m in rows)
-
+                # Single-match reads are available on the free plan; completed lists are not reliably available.
+                cursor = state.get("results_cursor", 0)
+                mid = pending_ids[cursor % len(pending_ids)]
+                state["results_cursor"] = cursor + 1
+                save_state(state)
+                payload = request_json(f"{LIVE_URL}/{mid}", live_key, {})
+                row = payload.get("data", payload) if isinstance(payload, dict) else None
+                rows = [row] if isinstance(row, dict) else []
+                print("Recupero tennis individuale:", mid)
                 if isinstance(rows, list):
                     details = [m for m in rows if isinstance(m, dict)
                                and str(m.get("id")) in pending_ids]

@@ -10,6 +10,16 @@ def record(kind, favorite=None, first=0):
             "players":["A","B"],"favorite_idx":favorite,"first_set_winner_idx":first,"finalized":False}
 
 class OutcomeTests(unittest.TestCase):
+    def test_documented_completed_status(self):
+        m = match([[6,6],[4,3]], "")
+        m.update(status="completed", outcome="completed")
+        self.assertEqual(outcomes.result_of(m)[0], 0)
+
+    def test_unresolved_not_final(self):
+        m = match([[6,6],[4,3]])
+        m.update(status="completed", outcome="unresolved")
+        self.assertIsNone(outcomes.result_of(m))
+
     def test_no_result_when_live(self):
         self.assertIsNone(outcomes.result_of(match([[6,6],[4,4]],"live")))
 
