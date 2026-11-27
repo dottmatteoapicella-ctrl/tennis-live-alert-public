@@ -540,12 +540,30 @@ def observe_break_recovery(state, live, counts, now, dry_run, token, chat_id):
         save_state(state)
 
 
+def choose_result_id(state, pending_ids, now):
+    """Least recently attempted first, including unresolved alerts still in live feed."""
+    attempts = state.setdefault("result_attempts", {})
+    ids = set(pending_ids)
+    for mid in list(attempts):
+        if mid not in ids:
+            del attempts[mid]
+    def priority(mid):
+        records = [r for r in state["telegram_alerts"].values()
+                   if str(r.get("match_id")) == mid and not r.get("finalized") and r.get("message_id")]
+        created = min((str(r.get("created_at") or "") for r in records), default="")
+        return (attempts.get(mid, ""), created, mid)
+    if not ids:
+        return None
+    mid = min(ids, key=priority)
+    attempts[mid] = now.isoformat()
+    return mid
+
+
 def recover_results(state, live, live_key, token, chat_id, dry_run):
     # Check completed matches only for Telegram alerts still awaiting an outcome.
     if not dry_run:
         import tennis_telegram_outcomes
         tennis_telegram_outcomes.update_from_matches(state, live, token, chat_id)
-        live_ids = {str(m.get("id")) for m in live}
         pending_ids = sorted({str(r.get("match_id")) for r in state["telegram_alerts"].values()
                               if not r.get("finalized") and r.get("message_id")
                               and str(r.get("match_id", "")).isdigit()
@@ -566,9 +584,7 @@ def recover_results(state, live, live_key, token, chat_id, dry_run):
             save_state(state)
             try:
                 # Single-match reads are available on the free plan; completed lists are not reliably available.
-                cursor = state.get("results_cursor", 0)
-                mid = pending_ids[cursor % len(pending_ids)]
-                state["results_cursor"] = cursor + 1
+                mid = choose_result_id(state, pending_ids, now)
                 save_state(state)
                 payload = request_json(f"{LIVE_URL}/{mid}", live_key, {})
                 row = payload.get("data", payload) if isinstance(payload, dict) else payload
@@ -647,7 +663,9 @@ def main():
         save_state(state)
         return
     if not reserve_tennis_request(state, "live", datetime.now(UTC)):
-        print("Budget LiveTennisAPI: sospeso fino al prossimo giorno UTC")
+        print("Budget LiveTennisAPI: live sospeso; verifica budget risultati")
+        recover_results(state, [], live_key, token, chat_id, os.environ.get("TENNIS_DRY_RUN", "1").strip() != "0")
+        save_state(state)
         return
     try:
         live = get_live(live_key)
