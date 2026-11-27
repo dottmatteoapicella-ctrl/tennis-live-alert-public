@@ -562,6 +562,22 @@ def choose_result_id(state, pending_ids, now):
     return mid
 
 
+def recovery_rows(payload):
+    """Unwrap known container shapes without inventing match identifiers."""
+    if isinstance(payload, list):
+        return [m for m in payload if isinstance(m, dict)]
+    if not isinstance(payload, dict):
+        return []
+    if payload.get("id") is not None:
+        return [payload]
+    for key in ("data", "match", "matches", "result"):
+        if key in payload:
+            rows = recovery_rows(payload[key])
+            if rows:
+                return rows
+    return []
+
+
 def recover_results(state, live, live_key, token, chat_id, dry_run):
     # Check completed matches only for Telegram alerts still awaiting an outcome.
     if not dry_run:
@@ -582,6 +598,8 @@ def recover_results(state, live, live_key, token, chat_id, dry_run):
         slot_key = f"{local.date()}:{slot}"
         due = slot is not None and state.get("completed_results_slot") != slot_key
         print(f"Recupero tennis: pending={len(pending_ids)} due={int(due)}")
+        if pending_ids and due:
+            print("Tennis recovery budget status:", state.get("tennis_api_budget", {}).get("results", 0))
         if pending_ids and due and reserve_tennis_request(state, "results", now):
             state["completed_results_slot"] = slot_key
             save_state(state)
@@ -590,8 +608,7 @@ def recover_results(state, live, live_key, token, chat_id, dry_run):
                 mid = choose_result_id(state, pending_ids, now)
                 save_state(state)
                 payload = request_json(f"{LIVE_URL}/{mid}", live_key, {})
-                row = payload.get("data", payload) if isinstance(payload, dict) else payload
-                rows = row if isinstance(row, list) else [row] if isinstance(row, dict) else []
+                rows = recovery_rows(payload)
                 print("Recupero tennis individuale:", mid)
                 if isinstance(rows, list):
                     details = [m for m in rows if isinstance(m, dict)
@@ -909,9 +926,10 @@ def main():
                         "finalized": False,
                     }
 
-                state["sent"][alert_id] = (
-                    now.isoformat()
-                )
+                if message_id is None:
+                    print("Tennis delivery unconfirmed")
+                    continue
+                state["sent"][alert_id] = now.isoformat()
 
                 save_state(state)
 
