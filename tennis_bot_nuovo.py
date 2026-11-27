@@ -470,7 +470,10 @@ def reserve_tennis_request(state, kind, now):
     if kind == "detail" and budget["detail"] >= 26:
         return False
     if kind == "results" and (budget.get("results", 0) >= 30 or budget["detail"] + budget.get("results", 0) >= 30):
-        return False
+        if day != "2026-11-27" or budget.get("extra_results_used"):
+            return False
+        budget["extra_results_used"] = True
+        print("Tennis: authorized one-time extra result request")
     budget[kind] = budget.get(kind, 0) + 1
     save_state(state)
     return True
@@ -567,7 +570,7 @@ def recover_results(state, live, live_key, token, chat_id, dry_run):
         pending_ids = sorted({str(r.get("match_id")) for r in state["telegram_alerts"].values()
                               if not r.get("finalized") and r.get("message_id")
                               and str(r.get("match_id", "")).isdigit()
-                              and str(r.get("match_id")) not in live_ids})
+                              })
         # Rotate a bounded batch so older unavailable matches cannot block others.
         details = []
         # Batch completed results before spending credits on individual matches.
