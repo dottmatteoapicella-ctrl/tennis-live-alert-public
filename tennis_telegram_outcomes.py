@@ -90,6 +90,15 @@ def update_break(record, match, token, chat_id):
     return True
 
 
+def retired_final(match):
+    status = str(match.get("status") or "").strip().lower()
+    outcome = str(match.get("outcome") or "").strip().lower()
+    event = str(match.get("event_status") or "").strip().lower()
+    return (status in FINISHED and outcome == "retired"
+            and event in ("retired", "") 
+            and (match.get("score") or {}).get("stale") is not True)
+
+
 def update_from_matches(state, matches, token, chat_id):
     by_id = {str(m["id"]): m for m in matches if isinstance(m, dict) and m.get("id") is not None}
     updated = 0
@@ -108,6 +117,23 @@ def update_from_matches(state, matches, token, chat_id):
         p2 = (players.get("p2") or {}).get("name")
         if [p1, p2] != record.get("players"):
             counts["player_mismatch"] += 1
+            continue
+        if retired_final(match):
+            marker = "⚪ PARTITA TERMINATA PER RITIRO — ESCLUSA DALLE STATISTICHE"
+            try:
+                response = requests.post(f"https://api.telegram.org/bot{token}/editMessageText",
+                    data={"chat_id":chat_id,"message_id":record["message_id"],
+                          "text":record["text"]+"\n\n"+marker}, timeout=20)
+                response.raise_for_status()
+                if not response.json().get("ok"):
+                    raise ValueError("Telegram edit not confirmed")
+            except (requests.RequestException, ValueError):
+                counts["edit_failed"] += 1
+                continue
+            record.update(finalized=True,result_marker=marker,neutral_reason="retired")
+            if record.get("alert_type") == "break_recovery":
+                record["break_outcome"]="neutral"
+            updated += 1
             continue
         if record.get("alert_type") == "break_recovery":
             try:
@@ -178,7 +204,7 @@ def favorite_statistics(state):
         if match_id is None:
             continue
         groups.setdefault(str(match_id), []).append(record)
-    wins = losses = pending = unknown = 0
+    wins = losses = pending = unknown = neutral = 0
     for records in groups.values():
         outcomes = set()
         for record in records:
@@ -198,11 +224,13 @@ def favorite_statistics(state):
             losses += 1
         elif not outcomes and all(not r.get("finalized") for r in records):
             pending += 1
+        elif not outcomes and all(r.get("neutral_reason") == "retired" for r in records):
+            neutral += 1
         else:
             unknown += 1
     total = wins + losses
     return dict(matches=len(groups), wins=wins, losses=losses, pending=pending,
-                unknown=unknown, win_pct=round(100 * wins / total, 2) if total else None)
+                unknown=unknown, neutral=neutral, win_pct=round(100 * wins / total, 2) if total else None)
 
 
 def print_favorite_statistics(state):
@@ -211,6 +239,6 @@ def print_favorite_statistics(state):
 
     records = [r for r in state.get("telegram_alerts", {}).values() if r.get("alert_type") == "break_recovery"]
     totals = {k: sum(r.get("break_outcome", "pending") == k for r in records)
-              for k in ("success", "failure", "unknown", "pending")}
+              for k in ("success", "failure", "unknown", "pending", "neutral")}
     verified = totals["success"] + totals["failure"]
     print("Statistiche Break Recovery:", totals, "success_pct=", round(100*totals["success"]/verified,2) if verified else None)
