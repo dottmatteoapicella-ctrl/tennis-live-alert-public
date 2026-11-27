@@ -13,7 +13,7 @@ class FavoriteStatisticsTests(unittest.TestCase):
             "e": dict(base, match_id=5, alert_type="rimonta_terzo_set"),
         }
         self.assertEqual(favorite_statistics({"telegram_alerts": records}),
-                         dict(matches=4, wins=1, losses=1, pending=1, unknown=1, win_pct=50.0))
+                         dict(matches=4, wins=1, losses=1, pending=1, unknown=1, neutral=0, win_pct=50.0))
 
     def test_empty(self):
         self.assertIsNone(favorite_statistics({})["win_pct"])
