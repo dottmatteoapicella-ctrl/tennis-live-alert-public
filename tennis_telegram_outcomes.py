@@ -235,7 +235,9 @@ def favorite_statistics(state):
 
 def print_favorite_statistics(state):
     stats = favorite_statistics(state)
-    print("Statistiche favoriti tennis:", " ".join(f"{k}={v}" for k, v in stats.items()))
+    # Keep the public aggregate compatible with the workflow allowlist.
+    # Neutral matches remain counted in matches and are derivable by subtraction.
+    print("Statistiche favoriti tennis:", " ".join(f"{k}={stats[k]}" for k in ("matches", "wins", "losses", "pending", "unknown", "win_pct")))
 
     records = [r for r in state.get("telegram_alerts", {}).values() if r.get("alert_type") == "break_recovery"]
     totals = {k: sum(r.get("break_outcome", "pending") == k for r in records)
